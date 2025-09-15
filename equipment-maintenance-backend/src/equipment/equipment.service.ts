@@ -2,6 +2,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateEquipmentDto, EquipmentStatus, EquipmentCondition } from './dto/create-equipment.dto';
+import { EquipmentFilterDto } from './dto/equipment-filter.dto';
 
 @Injectable()
 export class EquipmentService {
@@ -100,5 +101,96 @@ export class EquipmentService {
         });
 
         return equipment;
+    }
+
+    async findAll(filters: EquipmentFilterDto, companyId: string) {
+        // Build where clause starting with required filters
+        const where: any = {
+            companyId: companyId, // Explicitly set companyId first
+            isActive: true,
+        };
+
+        // Add optional filters only if they exist
+        if (filters.status) {
+            where.currentStatus = filters.status;
+        }
+
+        if (filters.condition) {
+            where.condition = filters.condition;
+        }
+
+        if (filters.equipmentTypeId) {
+            where.equipmentTypeId = filters.equipmentTypeId;
+        }
+
+        if (filters.location) {
+            where.location = {
+                contains: filters.location,
+                mode: 'insensitive'
+            };
+        }
+
+        // Handle search separately to avoid object spreading issues
+        if (filters.search && typeof filters.search === 'string' && filters.search.trim()) {
+            where.OR = [
+                { name: { contains: filters.search.trim(), mode: 'insensitive' } },
+                { serialNumber: { contains: filters.search.trim(), mode: 'insensitive' } },
+                { model: { contains: filters.search.trim(), mode: 'insensitive' } }
+            ];
+        }
+
+        // Calculate pagination
+        const page = filters.page || 1;
+        const limit = filters.limit || 10;
+        const skip = (page - 1) * limit;
+
+        // Build sort object
+        const orderBy: any = {};
+        orderBy[filters.sortBy || 'createdAt'] = filters.sortOrder || 'desc';
+
+        // Debug log to see what's in the where clause
+        console.log('Where clause:', JSON.stringify(where, null, 2));
+
+        // Execute query
+        const [equipment, total] = await Promise.all([
+            this.prisma.equipment.findMany({
+                where,
+                include: {
+                    equipmentType: {
+                        select: {
+                            id: true,
+                            name: true,
+                            description: true,
+                        },
+                    },
+                    creator: {
+                        select: {
+                            id: true,
+                            firstName: true,
+                            lastName: true,
+                            email: true,
+                        },
+                    },
+                },
+                orderBy,
+                skip,
+                take: limit,
+            }),
+            this.prisma.equipment.count({ where }),
+        ]);
+
+        const totalPages = Math.ceil(total / limit);
+
+        return {
+            data: equipment,
+            pagination: {
+                total,
+                page,
+                limit,
+                totalPages,
+                hasNextPage: page < totalPages,
+                hasPreviousPage: page > 1,
+            },
+        };
     }
 }
