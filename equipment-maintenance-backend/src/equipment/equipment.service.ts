@@ -445,4 +445,83 @@ export class EquipmentService {
 
         return updatedEquipment;
     }
+
+    //Soft delete an equipment
+    async remove(id: string, companyId: string) {
+        // 1. Verify equipment exists and belongs to company
+        const existingEquipment = await this.prisma.equipment.findFirst({
+            where: {
+                id: id,
+                companyId: companyId,
+                isActive: true,
+            },
+        });
+
+        if (!existingEquipment) {
+            throw new NotFoundException('Equipment not found');
+        }
+
+        // 2. Check if equipment is currently assigned
+        const currentAssignments = await this.prisma.equipmentAssignment.findMany({
+            where: {
+                equipmentId: id,
+                returnedAt: null, // Currently assigned
+            },
+            include: {
+                event: {
+                    select: { name: true, startDatetime: true },
+                },
+                team: {
+                    select: { name: true },
+                },
+            },
+        });
+
+        if (currentAssignments.length > 0) {
+            const assignmentDetails = currentAssignments.map(assignment => {
+                if (assignment.event) {
+                    return `Event: ${assignment.event.name}`;
+                }
+                if (assignment.team) {
+                    return `Team: ${assignment.team.name}`;
+                }
+                return 'Unknown assignment';
+            }).join(', ');
+
+            throw new ConflictException(
+                `Cannot delete equipment. Currently assigned to: ${assignmentDetails}`
+            );
+        }
+
+        // 3. Check for active maintenance logs
+        const activeMaintenance = await this.prisma.maintenanceLog.count({
+            where: {
+                equipmentId: id,
+                status: {
+                    in: ['pending', 'in_progress'],
+                },
+            },
+        });
+
+        if (activeMaintenance > 0) {
+            throw new ConflictException(
+                'Cannot delete equipment with active maintenance requests'
+            );
+        }
+
+        // 4. Soft delete the equipment
+        await this.prisma.equipment.update({
+            where: { id },
+            data: {
+                isActive: false,
+                updatedAt: new Date(),
+            },
+        });
+
+        return {
+            message: 'Equipment deleted successfully',
+            equipmentId: id,
+            equipmentName: existingEquipment.name,
+        };
+    }
 }

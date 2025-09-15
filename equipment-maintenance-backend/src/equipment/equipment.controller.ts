@@ -1,5 +1,5 @@
 // src/equipment/equipment.controller.ts
-import { Body, Controller, Get, Param, Patch, Post, Put, Query, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Request, UseGuards } from '@nestjs/common';
 import { EquipmentService } from './equipment.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -51,5 +51,12 @@ export class EquipmentController {
         @Request() req
     ) {
         return this.equipmentService.updateStatus(id, dto, req.user.companyId, req.user.userId);
+    }
+
+    @Delete(':id')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles('admin')
+    async remove(@Param('id') id: string, @Request() req) {
+        return this.equipmentService.remove(id, req.user.companyId);
     }
 }
