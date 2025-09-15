@@ -3,6 +3,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateEquipmentDto, EquipmentStatus, EquipmentCondition } from './dto/create-equipment.dto';
 import { EquipmentFilterDto } from './dto/equipment-filter.dto';
+import { UpdateEquipmentDto } from './dto/update-equipment.dto';
 
 @Injectable()
 export class EquipmentService {
@@ -192,5 +193,191 @@ export class EquipmentService {
                 hasPreviousPage: page > 1,
             },
         };
+    }
+
+    // Get equipment by ID
+    async findOne(id: string, companyId: string) {
+        const equipment = await this.prisma.equipment.findFirst({
+            where: {
+                id: id,
+                companyId: companyId,
+                isActive: true,
+            },
+            include: {
+                equipmentType: {
+                    select: {
+                        id: true,
+                        name: true,
+                        description: true,
+                        defaultMaintenanceIntervalDays: true,
+                    },
+                },
+                creator: {
+                    select: {
+                        id: true,
+                        firstName: true,
+                        lastName: true,
+                        email: true,
+                    },
+                },
+                assignments: {
+                    where: {
+                        returnedAt: null, // Only current assignments
+                    },
+                    include: {
+                        event: {
+                            select: {
+                                id: true,
+                                name: true,
+                                startDatetime: true,
+                                endDatetime: true,
+                            },
+                        },
+                        team: {
+                            select: {
+                                id: true,
+                                name: true,
+                            },
+                        },
+                        assigner: {
+                            select: {
+                                firstName: true,
+                                lastName: true,
+                                email: true,
+                            },
+                        },
+                    },
+                },
+                statusHistory: {
+                    orderBy: {
+                        changedAt: 'desc',
+                    },
+                    take: 5, // Last 5 status changes
+                    include: {
+                        changer: {
+                            select: {
+                                firstName: true,
+                                lastName: true,
+                                email: true,
+                            },
+                        },
+                    },
+                },
+            },
+        });
+
+        if (!equipment) {
+            throw new NotFoundException('Equipment not found');
+        }
+
+        return equipment;
+    }
+
+    //Update an equipment
+    async update(id: string, dto: UpdateEquipmentDto, companyId: string, userId: string) {
+        // 1. Verify equipment exists and belongs to company
+        const existingEquipment = await this.prisma.equipment.findFirst({
+            where: {
+                id: id,
+                companyId: companyId,
+                isActive: true,
+            },
+        });
+
+        if (!existingEquipment) {
+            throw new NotFoundException('Equipment not found');
+        }
+
+        // 2. Validate equipment type if being changed
+        if (dto.equipmentTypeId && dto.equipmentTypeId !== existingEquipment.equipmentTypeId) {
+            const equipmentType = await this.prisma.equipmentType.findFirst({
+                where: {
+                    id: dto.equipmentTypeId,
+                    companyId: companyId,
+                    isActive: true,
+                },
+            });
+
+            if (!equipmentType) {
+                throw new NotFoundException('Equipment type not found');
+            }
+        }
+
+        // 3. Check serial number uniqueness if being changed
+        if (dto.serialNumber && dto.serialNumber !== existingEquipment.serialNumber) {
+            const duplicateSerial = await this.prisma.equipment.findFirst({
+                where: {
+                    serialNumber: dto.serialNumber,
+                    companyId: companyId,
+                    isActive: true,
+                    NOT: {
+                        id: id, // Exclude current equipment
+                    },
+                },
+            });
+
+            if (duplicateSerial) {
+                throw new ConflictException('Equipment with this serial number already exists');
+            }
+        }
+
+        // 4. Prepare update data
+        const updateData: any = {
+            ...dto,
+            updatedAt: new Date(),
+        };
+
+        // Handle date fields
+        if (dto.purchaseDate) {
+            updateData.purchaseDate = new Date(dto.purchaseDate);
+        }
+        if (dto.lastMaintenanceDate) {
+            updateData.lastMaintenanceDate = new Date(dto.lastMaintenanceDate);
+        }
+        if (dto.nextMaintenanceDue) {
+            updateData.nextMaintenanceDue = new Date(dto.nextMaintenanceDue);
+        }
+
+        // 5. Update equipment
+        const updatedEquipment = await this.prisma.equipment.update({
+            where: { id },
+            data: updateData,
+            include: {
+                equipmentType: {
+                    select: {
+                        id: true,
+                        name: true,
+                        description: true,
+                    },
+                },
+                creator: {
+                    select: {
+                        id: true,
+                        firstName: true,
+                        lastName: true,
+                        email: true,
+                    },
+                },
+            },
+        });
+
+        // 6. Track status change if status was updated
+        if (dto.currentStatus && dto.currentStatus !== existingEquipment.currentStatus) {
+            await this.prisma.equipmentStatusHistory.create({
+                data: {
+                    equipmentId: id,
+                    oldStatus: existingEquipment.currentStatus,
+                    newStatus: dto.currentStatus,
+                    oldLocation: existingEquipment.location,
+                    newLocation: dto.location || existingEquipment.location,
+                    changedBy: userId,
+                    notes: 'Equipment updated',
+                    photoUrls: [],
+                    changedAt: new Date(),
+                },
+            });
+        }
+
+        return updatedEquipment;
     }
 }
