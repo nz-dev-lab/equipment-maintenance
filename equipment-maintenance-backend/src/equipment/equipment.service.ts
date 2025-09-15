@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateEquipmentDto, EquipmentStatus, EquipmentCondition } from './dto/create-equipment.dto';
 import { EquipmentFilterDto } from './dto/equipment-filter.dto';
 import { UpdateEquipmentDto } from './dto/update-equipment.dto';
+import { UpdateEquipmentStatusDto } from './dto/update-equipment-status.dto';
 
 @Injectable()
 export class EquipmentService {
@@ -377,6 +378,70 @@ export class EquipmentService {
                 },
             });
         }
+
+        return updatedEquipment;
+    }
+
+    //Update Equipment Status
+    async updateStatus(id: string, dto: UpdateEquipmentStatusDto, companyId: string, userId: string) {
+        // 1. Verify equipment exists and belongs to company
+        const existingEquipment = await this.prisma.equipment.findFirst({
+            where: {
+                id: id,
+                companyId: companyId,
+                isActive: true,
+            },
+        });
+
+        if (!existingEquipment) {
+            throw new NotFoundException('Equipment not found');
+        }
+
+        // 2. Check if status is actually changing
+        if (dto.status === existingEquipment.currentStatus) {
+            throw new ConflictException('Equipment already has this status');
+        }
+
+        // 3. Prepare update data
+        const updateData: any = {
+            currentStatus: dto.status,
+            updatedAt: new Date(),
+        };
+
+        // Update location if provided
+        if (dto.location) {
+            updateData.location = dto.location;
+        }
+
+        // 4. Update equipment status
+        const updatedEquipment = await this.prisma.equipment.update({
+            where: { id },
+            data: updateData,
+            include: {
+                equipmentType: {
+                    select: {
+                        id: true,
+                        name: true,
+                        description: true,
+                    },
+                },
+            },
+        });
+
+        // 5. Create status history entry
+        await this.prisma.equipmentStatusHistory.create({
+            data: {
+                equipmentId: id,
+                oldStatus: existingEquipment.currentStatus,
+                newStatus: dto.status,
+                oldLocation: existingEquipment.location,
+                newLocation: dto.location || existingEquipment.location,
+                changedBy: userId,
+                notes: dto.notes || 'Status updated',
+                photoUrls: [],
+                changedAt: new Date(),
+            },
+        });
 
         return updatedEquipment;
     }

@@ -1,5 +1,5 @@
 // src/equipment/equipment.controller.ts
-import { Body, Controller, Get, Param, Post, Put, Query, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Put, Query, Request, UseGuards } from '@nestjs/common';
 import { EquipmentService } from './equipment.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -7,6 +7,7 @@ import { Roles } from '../auth/roles.decorator';
 import { CreateEquipmentDto } from './dto/create-equipment.dto';
 import { EquipmentFilterDto } from './dto/equipment-filter.dto';
 import { UpdateEquipmentDto } from './dto/update-equipment.dto';
+import { UpdateEquipmentStatusDto } from './dto/update-equipment-status.dto';
 
 @Controller('equipment')
 export class EquipmentController {
@@ -40,5 +41,15 @@ export class EquipmentController {
         @Request() req
     ) {
         return this.equipmentService.update(id, dto, req.user.companyId, req.user.userId);
+    }
+
+    @Patch(':id/status')
+    @UseGuards(JwtAuthGuard)
+    async updateStatus(
+        @Param('id') id: string,
+        @Body() dto: UpdateEquipmentStatusDto,
+        @Request() req
+    ) {
+        return this.equipmentService.updateStatus(id, dto, req.user.companyId, req.user.userId);
     }
 }
