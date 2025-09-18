@@ -96,6 +96,7 @@ model Company {
   subscriptionUsage   SubscriptionUsage[]
   componentCategories ComponentCategory[]
   fileUploads         FileUpload[]
+  equipmentPhotos EquipmentPhoto[]
   userInvitations     UserInvitation[]
   companySettings     CompanySettings?
 
@@ -130,6 +131,7 @@ model User {
   equipmentAssignments EquipmentAssignment[]
   reportedMaintenance  MaintenanceLog[]       @relation("MaintenanceReportedBy")
   assignedMaintenance  MaintenanceLog[]       @relation("MaintenanceAssignedTo")
+  uploadedPhotos EquipmentPhoto[] @relation("PhotoUploader") 
   auditLogs           AuditLog[]
   notifications       Notification[]
   statusHistoryChanges EquipmentStatusHistory[]
@@ -241,7 +243,6 @@ model Equipment {
   lastMaintenanceDate    DateTime?           @map("last_maintenance_date") @db.Date
   nextMaintenanceDue     DateTime?           @map("next_maintenance_due") @db.Date
   qrCode                 String?             @unique @map("qr_code") @db.VarChar(100)
-  photoUrls              String[]            @map("photo_urls")
   isParent               Boolean             @default(false) @map("is_parent")
   isComponent            Boolean             @default(false) @map("is_component")
   isActive               Boolean             @default(true) @map("is_active")
@@ -259,6 +260,7 @@ model Equipment {
   assignments        EquipmentAssignment[]
   maintenanceLogs    MaintenanceLog[]
   statusHistory      EquipmentStatusHistory[]
+  photos EquipmentPhoto[]
 
   @@unique([companyId, serialNumber])
   @@index([companyId])
@@ -268,6 +270,31 @@ model Equipment {
   @@index([nextMaintenanceDue])
   @@index([parentEquipmentId])
   @@map("equipment")
+}
+
+model EquipmentPhoto {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  equipmentId   String   @map("equipment_id") @db.Uuid
+  companyId     String   @map("company_id") @db.Uuid
+  fileUrl       String   @map("file_url") @db.VarChar(500)
+  filename      String   @db.VarChar(255)
+  fileSizeBytes BigInt   @map("file_size_bytes")
+  mimeType      String   @map("mime_type") @db.VarChar(100)
+  isPrimary     Boolean  @default(false) @map("is_primary")
+  photoType     String   @default("general") @map("photo_type") @db.VarChar(50)
+  description   String?  @db.Text
+  uploadedBy    String   @map("uploaded_by") @db.Uuid
+  uploadedAt    DateTime @default(now()) @map("uploaded_at") @db.Timestamp(6)
+
+  // Relations
+  equipment Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  company   Company   @relation(fields: [companyId], references: [id])
+  uploader  User      @relation("PhotoUploader", fields: [uploadedBy], references: [id])
+
+  @@index([companyId])
+  @@index([equipmentId])
+  @@index([equipmentId, isPrimary])
+  @@map("equipment_photos")
 }
 
 model Team {

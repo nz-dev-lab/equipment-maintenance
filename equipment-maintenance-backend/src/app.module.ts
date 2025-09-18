@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { CommonModule } from './common/common.module';
 import { EquipmentModule } from './equipment/equipment.module';
+import { FilesModule } from './files/files.module';
 
 
 
@@ -20,6 +21,7 @@ import { EquipmentModule } from './equipment/equipment.module';
     AuthModule,
     UsersModule,
     EquipmentModule,
+    FilesModule,
 
   ],
   controllers: [AppController],
